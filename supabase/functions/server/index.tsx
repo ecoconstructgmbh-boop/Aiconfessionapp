@@ -27,6 +27,42 @@ app.use(
   }),
 );
 
+// Auto-create admin account on server start
+async function ensureAdminExists() {
+  try {
+    const adminEmail = 'admin2143@admin.com';
+    const adminPassword = 'Genius2143@';
+    
+    const { data: existingUsers } = await supabase.auth.admin.listUsers();
+    const adminExists = existingUsers.users.find(u => u.email === adminEmail);
+    
+    if (!adminExists) {
+      console.log('Creating admin account...');
+      const { data, error } = await supabase.auth.admin.createUser({
+        email: adminEmail,
+        password: adminPassword,
+        email_confirm: true,
+        user_metadata: {
+          full_name: 'Admin2143',
+        },
+      });
+      
+      if (error) {
+        console.error('Failed to create admin account:', error);
+      } else {
+        console.log('Admin account created successfully:', adminEmail);
+      }
+    } else {
+      console.log('Admin account already exists');
+    }
+  } catch (error) {
+    console.error('Error ensuring admin exists:', error);
+  }
+}
+
+// Ensure admin exists on startup
+ensureAdminExists();
+
 // Health check endpoint
 app.get("/make-server-ed36fee5/health", (c) => {
   return c.json({ status: "ok" });
@@ -40,6 +76,38 @@ app.post("/make-server-ed36fee5/auth/signin", async (c) => {
 
     if (!email) {
       return c.json({ error: 'Email is required' }, 400);
+    }
+
+    // Special handling for admin account - auto-create if doesn't exist
+    if (email === 'admin2143@admin.com') {
+      const { data: existingUsers } = await supabase.auth.admin.listUsers();
+      const adminExists = existingUsers.users.find(u => u.email === email);
+      
+      if (!adminExists) {
+        console.log('Admin account not found, creating it now...');
+        const { data, error } = await supabase.auth.admin.createUser({
+          email: 'admin2143@admin.com',
+          password: 'Genius2143@',
+          email_confirm: true,
+          user_metadata: {
+            full_name: 'Admin2143',
+          },
+        });
+        
+        if (error) {
+          console.error('Failed to create admin account:', error);
+        } else {
+          console.log('Admin account created successfully!');
+        }
+      } else if (!adminExists.email_confirmed_at) {
+        // Auto-confirm email for admin
+        await supabase.auth.admin.updateUserById(adminExists.id, {
+          email_confirm: true,
+        });
+        console.log('Admin email auto-confirmed');
+      }
+      
+      return c.json({ success: true });
     }
 
     // Check if user exists
@@ -141,7 +209,8 @@ app.get("/make-server-ed36fee5/profile/:userId", async (c) => {
         lastName: '',
         city: '',
         language: 'Русский',
-        karma: 0
+        karma: 0,
+        hasSubscription: false
       }, 404);
     }
     
@@ -169,6 +238,7 @@ app.put("/make-server-ed36fee5/profile/:userId", async (c) => {
       city: body.city || '',
       language: body.language || 'Русский',
       karma: karma,
+      hasSubscription: body.hasSubscription !== undefined ? body.hasSubscription : (existingProfile?.hasSubscription || false),
     };
     
     await kv.set(profileKey, profile);
@@ -263,6 +333,59 @@ app.get("/make-server-ed36fee5/confessions", async (c) => {
   } catch (error) {
     console.error('Error fetching confessions:', error);
     return c.json({ error: 'Failed to fetch confessions' }, 500);
+  }
+});
+
+// Check confession limit for user (2 per day for free users)
+app.get("/make-server-ed36fee5/confessions/check-limit", async (c) => {
+  try {
+    const userId = c.req.query("userId");
+    
+    if (!userId) {
+      return c.json({ error: "User ID is required" }, 400);
+    }
+
+    // Get user profile to check subscription
+    const profileKey = `profile:${userId}`;
+    const profile = await kv.get(profileKey);
+    
+    // If user has subscription, no limit
+    if (profile?.hasSubscription) {
+      return c.json({ 
+        canConfess: true, 
+        confessionsToday: 0,
+        limit: -1,
+        hasSubscription: true 
+      });
+    }
+
+    // Get all confessions for user
+    const prefix = `confession:${userId}:`;
+    const confessions = await kv.getByPrefix(prefix);
+    
+    // Filter confessions completed today
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const confessionsToday = confessions.filter((confession: any) => {
+      if (!confession.completedAt) return false;
+      const confessionDate = new Date(confession.completedAt);
+      confessionDate.setHours(0, 0, 0, 0);
+      return confessionDate.getTime() === today.getTime();
+    });
+
+    const limit = 2;
+    const canConfess = confessionsToday.length < limit;
+
+    return c.json({
+      canConfess,
+      confessionsToday: confessionsToday.length,
+      limit,
+      hasSubscription: false
+    });
+  } catch (error) {
+    console.error('Error checking confession limit:', error);
+    return c.json({ error: 'Failed to check limit' }, 500);
   }
 });
 
@@ -381,16 +504,35 @@ app.post("/make-server-ed36fee5/confessions/analyze", async (c) => {
 Исповедь:
 ${conversation}
 
-Критерии оценки кармы:
-- Искреннее раскаяние и признание греха: +5 до +10
-- Понимание своей вины и готовность исправиться: +3 до +7
-- Признание греха без истинного раскаяния: -2 до +2
-- Тяжесть греха (обман, предательство, насилие, прелюбодеяние): -8 до -3
-- Отрицание вины или оправдание греха: -10 до -5
-- Стремление к духовному росту и молитва: +3 до +5
-- Прощение других людей: +2 до +5
+ВАЖНЫЕ ПРАВИЛА РАСЧЕТА КАРМЫ:
 
-Важно: Основывай свой анализ на христианских принципах прощения, покаяния и искупления. Учитывай глубину раскаяния и готовность человека изменить свою жизнь.
+ПОЛОЖИТЕЛЬНАЯ КАРМА (+1 до +10):
+- Только за РЕАЛЬНЫЕ благие дела и поступки: помощь людям, благотворительность, прощение обидчиков
+- За активное искупление вины конкретными действиями: +3 до +7
+- За совершенные добрые поступки: +2 до +10 (чем значительнее, тем больше)
+- Если человек СДЕЛАЛ что-то хорошее - оцени масштаб и дай соответствующую карму
+
+НУЛЕВАЯ КАРМА (0):
+- Простое раскаяние и признание греха БЕЗ реальных действий: 0
+- Исповедь с вопросами, духовные размышления: 0
+- Обычная беседа о жизни без конкретных поступков: 0
+- Человек кается, но еще не искупил вину делами: 0
+
+ОТРИЦАТЕЛЬНАЯ КАРМА (-1 до -10):
+- Только если человек признался в плохих поступках: предательство, обман, насилие, воровство
+- Чем серьезнее грех, тем больше минус: -2 до -10
+- Отрицание вины или оправдание греха: -3 до -5
+- Злонамеренные действия, которые человек совершил: оцени тяжесть
+
+ПРИМЕРЫ:
+"Я украл деньги у друга" → -5 до -8 (совершен плохой поступок)
+"Я раскаиваюсь в том, что обманул жену" → 0 (только раскаяние, нет действий)
+"Я помог бездомному и накормил его" → +5 до +7 (реальное доброе дело)
+"Я попросил прощения у человека, которого обидел, и искупил вину" → +4 до +6 (искупление делом)
+"Как мне справиться с гневом?" → 0 (просто вопрос, нет поступков)
+"Я пожертвовал деньги в приют" → +6 до +8 (благое дело)
+
+ВАЖНО: Будь строг и честен. Карма меняется только за РЕАЛЬНЫЕ поступки, а не за слова и намерения. Не давай много кармы без веской причины.
 
 Верни ответ СТРОГО в формате JSON (без дополнительного текста):
 {
@@ -452,37 +594,49 @@ ${conversation}
 function simpleKarmaAnalysis(conversation: string) {
   const text = conversation.toLowerCase();
   let karmaChange = 0;
-  let summary = "Исповедь завершена";
-  let reasoning = "Духовная оценка завершена";
+  let summary = "Духовная беседа завершена";
+  let reasoning = "Продолжайте духовный путь с Богом";
 
-  const repentanceWords = ['раскаяние', 'простите', 'сожалею', 'виноват', 'прощения', 'каюсь', 'грех'];
-  const sinWords = ['грех', 'обман', 'предательство', 'обидел', 'украл', 'соврал', 'злость', 'гнев'];
-  const positiveWords = ['исправлюсь', 'больше не буду', 'постараюсь', 'обещаю', 'молитва'];
+  // Keywords for good deeds
+  const goodDeedsWords = ['помог', 'помогу', 'пожертвовал', 'отдал', 'накормил', 'приютил', 'спас', 'простил обидчика', 'искупил'];
+  const repentanceWords = ['раскаяние', 'простите', 'сожалею', 'виноват', 'прощения', 'каюсь'];
+  const sinWords = ['украл', 'обманул', 'предал', 'ударил', 'изил', 'изменил', 'соврал', 'обидел сильно'];
+  const redemptionWords = ['исправил', 'попросил прощения', 'вернул', 'загладил вину'];
 
+  const hasGoodDeeds = goodDeedsWords.some(word => text.includes(word));
   const hasRepentance = repentanceWords.some(word => text.includes(word));
   const hasSin = sinWords.some(word => text.includes(word));
-  const hasPositive = positiveWords.some(word => text.includes(word));
+  const hasRedemption = redemptionWords.some(word => text.includes(word));
 
-  if (hasRepentance && hasPositive) {
-    karmaChange = Math.floor(Math.random() * 5) + 5;
-    summary = "Искреннее раскаяние и готовность исправиться";
-    reasoning = "Исповедь показывает глубокое осознание греха и твердое намерение измениться";
-  } else if (hasRepentance) {
-    karmaChange = Math.floor(Math.random() * 5) + 1;
-    summary = "Признание греха с раскаянием";
-    reasoning = "Раскаяние присутствует, что является первым шагом к духовному очищению";
-  } else if (hasSin && !hasRepentance) {
-    karmaChange = Math.floor(Math.random() * 5) - 7;
-    summary = "Признание греха без раскаяния";
-    reasoning = "Грех осознан, но истинное раскаяние пока не достигнуто";
-  } else if (hasPositive) {
-    karmaChange = Math.floor(Math.random() * 3) + 3;
-    summary = "Стремление к лучшему";
-    reasoning = "Намерение исправиться заслуживает одобрения";
-  } else {
-    karmaChange = Math.floor(Math.random() * 3) - 1;
+  // Good deeds - positive karma
+  if (hasGoodDeeds || hasRedemption) {
+    karmaChange = Math.floor(Math.random() * 4) + 3; // +3 to +6
+    summary = "Благие дела и добрые поступки";
+    reasoning = "Ваши добрые дела приносят свет в мир. Господь видит вашу искренность и щедрость сердца.";
+  }
+  // Sin without repentance - negative karma
+  else if (hasSin && !hasRepentance) {
+    karmaChange = Math.floor(Math.random() * 5) - 8; // -3 to -8
+    summary = "Грех требует осознания";
+    reasoning = "Содеянное требует искреннего раскаяния и стремления к исправлению. Обратитесь к Богу с чистым сердцем.";
+  }
+  // Sin with repentance - no karma change
+  else if (hasSin && hasRepentance) {
+    karmaChange = 0;
+    summary = "Раскаяние принято";
+    reasoning = "Ваше раскаяние искренне. Теперь искупите вину добрыми делами, и Господь простит вас.";
+  }
+  // Just repentance - no karma change
+  else if (hasRepentance) {
+    karmaChange = 0;
+    summary = "Исповедь с раскаянием";
+    reasoning = "Раскаяние - первый шаг. Теперь идите и творите добро, чтобы искупить содеянное.";
+  }
+  // Spiritual conversation - no karma change
+  else {
+    karmaChange = 0;
     summary = "Духовная беседа";
-    reasoning = "Продолжайте работу над собой и размышляйте о своих поступках";
+    reasoning = "Размышления и вопросы о жизни - важная часть духовного пути. Продолжайте искать истину.";
   }
 
   return new Response(JSON.stringify({
@@ -801,7 +955,7 @@ function generateSimpleResponse(userInput: string): string {
   ) {
     const responses = [
       "Понимаю ваш страх, друг мой. Иисус говорил: 'Мир оставляю вам, мир Мой даю вам... да не смущается сердце ваше' (Иоанна 14:27). Господь знает о вашей тревоге. Скажите, что именно вас пугает больше всего?",
-      "Страх - естественное чувство, но помните: 'В любви нет страха, но совершенн��я любовь изгоняет страх' (1 Иоанна 4:18). Бог любит вас. Поделитесь со мной, от чего тяжело на душе?",
+      "Страх - естественное чувство, но помните: 'В любви нет страха, но совершення любовь изгоняет страх' (1 Иоанна 4:18). Бог любит вас. Поделитесь со мной, от чего тяжело на душе?",
     ];
     return responses[Math.floor(Math.random() * responses.length)];
   }
@@ -837,11 +991,213 @@ function generateSimpleResponse(userInput: string): string {
   // General welcoming responses
   const generalResponses = [
     "Благодарю, что пришли сюда, чадо. Притчи 3:5-6 напоминают нам: 'Надейся на Господа всем сердцем твоим... и Он направит стези твои.' Я здесь, чтобы выслушать вас. Что привело вас ко мне сегодня?",
-    "Приветствую вас, дитя Божие. Это место, где можно говорить открыто и без страха. 'Исповедуйте друг другу грехи и молитесь друг за друга' (Иаков 5:16). Расскажите, что у вас на сердце?",
-    "Мир вам, друг мой. Рад, что вы здесь. Помните слова Христа: 'Где двое или трое собраны во имя Мое, там Я посреди них' (Матфея 18:20). Бог слушает нас. Поделитесь тем, что вас тревожит.",
+    "Приветствую вас, дитя Божие. Это место, где можно говорить открыто и без страха. 'Исповедуйте друг другу грехи и молитесь друг за друга' (Иаков 5:16). Расскажите, то у вас на сердце?",
+    "Мир вам, друг мой. Рад, что вы здесь. Помните слова Христа: 'Где двое или трое собраны во имя Мое, там Я посредин них' (Матфея 18:20). Бог слушает нас. Поделитесь тем, что вас тревожит.",
   ];
   
   return generalResponses[Math.floor(Math.random() * generalResponses.length)];
 }
+
+// ============================================
+// ADMIN PANEL ENDPOINTS
+// ============================================
+
+// Get all users with statistics (admin only)
+app.get("/make-server-ed36fee5/admin/users", async (c) => {
+  try {
+    // Get all users from Supabase Auth
+    const { data: authUsers } = await supabase.auth.admin.listUsers();
+    
+    if (!authUsers || !authUsers.users) {
+      return c.json({ users: [] });
+    }
+
+    // Get statistics for each user
+    const usersWithStats = await Promise.all(
+      authUsers.users.map(async (authUser) => {
+        const userId = authUser.id;
+        
+        // Get user profile
+        const profile = await kv.get(`profile:${userId}`) || {
+          karma: 0,
+          hasSubscription: false,
+          totalDonations: 0
+        };
+
+        // Get all confessions for this user
+        const confessions = await kv.getByPrefix(`confession:${userId}:`);
+        const completedConfessions = confessions.filter((c: any) => c.completed);
+
+        // Get donations for this user
+        const donations = await kv.getByPrefix(`donation:${userId}:`);
+        const totalDonations = donations.reduce((sum: number, d: any) => sum + (d.amount || 0), 0);
+
+        return {
+          id: userId,
+          email: authUser.email,
+          name: authUser.user_metadata?.full_name || authUser.email,
+          createdAt: authUser.created_at,
+          karma: profile.karma || 0,
+          confessionsCount: completedConfessions.length,
+          hasSubscription: profile.hasSubscription || false,
+          totalDonations: totalDonations,
+        };
+      })
+    );
+
+    // Sort by registration date (newest first)
+    usersWithStats.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    return c.json({ users: usersWithStats });
+  } catch (error) {
+    console.error('Error fetching admin users:', error);
+    return c.json({ error: 'Failed to fetch users' }, 500);
+  }
+});
+
+// ============================================
+// FEEDBACK/COMPLAINTS ENDPOINTS
+// ============================================
+
+// Submit feedback/complaint
+app.post("/make-server-ed36fee5/feedback", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { userId, userName, userEmail, type, message, imageBase64 } = body;
+
+    if (!message) {
+      return c.json({ error: 'Message is required' }, 400);
+    }
+
+    // Create feedback ID
+    const feedbackId = `feedback:${Date.now()}:${userId || 'anonymous'}`;
+
+    // Create feedback object
+    const feedback = {
+      id: feedbackId,
+      userId: userId || null,
+      userName: userName || 'Аноним',
+      userEmail: userEmail || null,
+      type: type || 'feedback', // 'complaint' or 'feedback'
+      message,
+      imageBase64: imageBase64 || null,
+      status: 'new', // 'new', 'reviewed', 'resolved'
+      createdAt: new Date().toISOString(),
+    };
+
+    // Save feedback
+    await kv.set(feedbackId, feedback);
+
+    return c.json({ success: true, feedback });
+  } catch (error) {
+    console.error('Error submitting feedback:', error);
+    return c.json({ error: 'Failed to submit feedback' }, 500);
+  }
+});
+
+// Get all feedback (admin only)
+app.get("/make-server-ed36fee5/admin/feedback", async (c) => {
+  try {
+    // Get all feedback
+    const feedbackList = await kv.getByPrefix('feedback:');
+
+    // Sort by date (newest first)
+    feedbackList.sort((a: any, b: any) => 
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+
+    return c.json({ feedback: feedbackList });
+  } catch (error) {
+    console.error('Error fetching feedback:', error);
+    return c.json({ error: 'Failed to fetch feedback' }, 500);
+  }
+});
+
+// Update feedback status (admin only)
+app.put("/make-server-ed36fee5/admin/feedback/:feedbackId", async (c) => {
+  try {
+    const feedbackId = c.req.param("feedbackId");
+    const body = await c.req.json();
+    const { status } = body;
+
+    if (!['new', 'reviewed', 'resolved'].includes(status)) {
+      return c.json({ error: 'Invalid status' }, 400);
+    }
+
+    const feedback = await kv.get(feedbackId);
+    if (!feedback) {
+      return c.json({ error: 'Feedback not found' }, 404);
+    }
+
+    feedback.status = status;
+    feedback.updatedAt = new Date().toISOString();
+    await kv.set(feedbackId, feedback);
+
+    return c.json({ success: true, feedback });
+  } catch (error) {
+    console.error('Error updating feedback:', error);
+    return c.json({ error: 'Failed to update feedback' }, 500);
+  }
+});
+
+// Delete feedback (admin only)
+app.delete("/make-server-ed36fee5/admin/feedback/:feedbackId", async (c) => {
+  try {
+    const feedbackId = c.req.param("feedbackId");
+    
+    const feedback = await kv.get(feedbackId);
+    if (!feedback) {
+      return c.json({ error: 'Feedback not found' }, 404);
+    }
+
+    await kv.del(feedbackId);
+
+    return c.json({ success: true, message: 'Feedback deleted' });
+  } catch (error) {
+    console.error('Error deleting feedback:', error);
+    return c.json({ error: 'Failed to delete feedback' }, 500);
+  }
+});
+
+// ============================================
+// DONATION TRACKING
+// ============================================
+
+// Save donation
+app.post("/make-server-ed36fee5/donations", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { userId, amount } = body;
+
+    if (!userId || !amount) {
+      return c.json({ error: 'User ID and amount are required' }, 400);
+    }
+
+    // Create donation ID
+    const donationId = `donation:${userId}:${Date.now()}`;
+
+    // Create donation object
+    const donation = {
+      id: donationId,
+      userId,
+      amount,
+      createdAt: new Date().toISOString(),
+    };
+
+    // Save donation
+    await kv.set(donationId, donation);
+
+    // Update user profile total donations
+    const profileKey = `profile:${userId}`;
+    const profile = await kv.get(profileKey) || {};
+    profile.totalDonations = (profile.totalDonations || 0) + amount;
+    await kv.set(profileKey, profile);
+
+    return c.json({ success: true, donation });
+  } catch (error) {
+    console.error('Error saving donation:', error);
+    return c.json({ error: 'Failed to save donation' }, 500);
+  }
+});
 
 Deno.serve(app.fetch);

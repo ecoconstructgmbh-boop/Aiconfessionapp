@@ -11,7 +11,10 @@ import {
   MapPin, 
   Globe, 
   Star,
-  Sparkles
+  Sparkles,
+  Crown,
+  Infinity,
+  Calendar
 } from "lucide-react";
 
 interface ProfileProps {
@@ -284,6 +287,131 @@ export function Profile({ user, onSignOut }: ProfileProps) {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Subscription Card */}
+        <div className="bg-card rounded-xl shadow-lg border border-border p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3
+              className="text-lg text-primary flex items-center gap-2"
+              style={{ fontFamily: "'Cinzel', serif" }}
+            >
+              <Crown className="w-5 h-5 text-accent" />
+              Подписка
+            </h3>
+          </div>
+
+          {profile.hasSubscription ? (
+            <div className="space-y-4">
+              {/* Active subscription */}
+              <div className="p-4 bg-gradient-to-br from-accent/20 to-primary/10 border border-accent/30 rounded-lg">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-accent/30 to-primary/20 flex items-center justify-center border-2 border-accent/30">
+                    <Infinity className="w-6 h-6 text-accent" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-foreground">Premium активна</p>
+                    <p className="text-sm text-muted-foreground">Безлимитные исповеди</p>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-sm">
+                    <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
+                    <span className="text-muted-foreground">Неограниченное количество исповедей</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
+                    <span className="text-muted-foreground">Полная история всех бесед</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
+                    <span className="text-muted-foreground">Приоритетная поддержка</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Calendar className="w-4 h-4" />
+                  <span>Следующий платеж</span>
+                </div>
+                <span className="text-sm font-medium text-foreground">
+                  {new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString('ru-RU')}
+                </span>
+              </div>
+
+              <button
+                className="w-full px-4 py-2 bg-secondary text-foreground rounded-lg hover:bg-secondary/80 transition-all text-sm"
+              >
+                Управление подпиской
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* Free plan */}
+              <div className="p-4 bg-secondary/30 border border-border rounded-lg">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="font-semibold text-foreground">Бесплатный план</p>
+                    <p className="text-sm text-muted-foreground">Ограничено 2 исповеди в день</p>
+                  </div>
+                  <span className="text-2xl font-bold text-primary">$0</span>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-sm">
+                    <div className="w-1.5 h-1.5 rounded-full bg-yellow-500"></div>
+                    <span className="text-muted-foreground">2 исповеди в день</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <div className="w-1.5 h-1.5 rounded-full bg-yellow-500"></div>
+                    <span className="text-muted-foreground">История последних 10 исповедей</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <div className="w-1.5 h-1.5 rounded-full bg-yellow-500"></div>
+                    <span className="text-muted-foreground">Базовая поддержка</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Upgrade offer */}
+              <div className="p-4 bg-gradient-to-br from-accent/10 to-primary/5 border-2 border-accent/30 rounded-lg">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-accent/30 to-primary/20 flex items-center justify-center">
+                    <Infinity className="w-5 h-5 text-accent" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-foreground">Premium</p>
+                    <p className="text-lg font-bold text-accent">$3<span className="text-sm text-muted-foreground">/месяц</span></p>
+                  </div>
+                </div>
+
+                <ul className="space-y-2 mb-4">
+                  <li className="flex items-center gap-2 text-sm">
+                    <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
+                    <span className="text-muted-foreground">Неограниченные исповеди</span>
+                  </li>
+                  <li className="flex items-center gap-2 text-sm">
+                    <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
+                    <span className="text-muted-foreground">Полная история всех бесед</span>
+                  </li>
+                  <li className="flex items-center gap-2 text-sm">
+                    <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
+                    <span className="text-muted-foreground">Приоритетная поддержка</span>
+                  </li>
+                </ul>
+
+                <button
+                  onClick={() => alert("Интеграция с платежной системой будет добавлена в ближайшее время.")}
+                  className="w-full px-4 py-3 bg-gradient-to-r from-accent to-primary text-white rounded-lg hover:opacity-90 transition-all font-semibold shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  Подписаться за $3
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* About Section */}

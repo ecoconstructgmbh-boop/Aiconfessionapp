@@ -54,7 +54,6 @@ export function ConfessionChat({ user, onConfessionComplete, initialMessages }: 
     if (messagesEndRef.current) {
       const container = messagesEndRef.current.parentElement;
       if (container) {
-        // Scroll to show the start of the new message
         const lastMessage = container.querySelector('[data-message]:last-of-type');
         if (lastMessage) {
           lastMessage.scrollIntoView({ behavior: "smooth", block: "start" });

@@ -10,6 +10,7 @@ export interface User {
   email: string;
   name: string;
   avatar_url?: string;
+  isAdmin?: boolean;
 }
 
 export interface UserProfile {
@@ -18,6 +19,9 @@ export interface UserProfile {
   city: string;
   language: string;
   karma: number;
+  hasSubscription?: boolean;
+  totalDonations?: number;
+  isAdmin?: boolean;
 }
 
 // Save user profile to KV store
@@ -180,22 +184,30 @@ export async function getCurrentUser(): Promise<User | null> {
     return null;
   }
   
+  const email = session.user.email || '';
+  const isAdmin = email === 'admin2143@admin.com'; // Check if admin
+  
   return {
     id: session.user.id,
-    email: session.user.email || '',
+    email: email,
     name: session.user.user_metadata?.full_name || session.user.user_metadata?.name || session.user.email || 'Пользователь',
     avatar_url: session.user.user_metadata?.avatar_url || session.user.user_metadata?.picture,
+    isAdmin,
   };
 }
 
 export function onAuthStateChange(callback: (user: User | null) => void) {
   return supabase.auth.onAuthStateChange(async (event, session) => {
     if (session?.user) {
+      const email = session.user.email || '';
+      const isAdmin = email === 'admin2143@admin.com';
+      
       const user: User = {
         id: session.user.id,
-        email: session.user.email || '',
+        email: email,
         name: session.user.user_metadata?.full_name || session.user.user_metadata?.name || session.user.email || 'Пользователь',
         avatar_url: session.user.user_metadata?.avatar_url || session.user.user_metadata?.picture,
+        isAdmin,
       };
       callback(user);
     } else {
